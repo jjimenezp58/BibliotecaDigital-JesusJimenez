@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 30
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_QUALITYGATE_WAIT: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - name: Descargar el repositorio
         uses: actions/checkout@v7
@@ -43,7 +44,7 @@ jobs:
           /o:"jjimenezp58"
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.token="${SONAR_TOKEN}"
-          /d:sonar.qualitygate.wait=true
+          /d:sonar.qualitygate.wait="${SONAR_QUALITYGATE_WAIT}"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
 
       - name: Restaurar dependencias
