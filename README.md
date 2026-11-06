@@ -16,3 +16,15 @@ En `main`, espera el resultado del Quality Gate; SonarQube Cloud no permite a
 esta organización consultar el Gate en ramas distintas. En todas las ramas,
 guarda los informes TRX y de cobertura como artefacto descargable durante 7
 días.
+
+## Portal web publicado
+
+El portal está disponible en [GitHub Pages](https://jjimenezp58.github.io/BibliotecaDigital-JesusJimenez/).
+Es una web estática publicada desde `site/`. La API ASP.NET Core no está desplegada
+en GitHub Pages; por tanto, los endpoints descritos en el portal no se ejecutan allí.
+
+## Workflows de GitHub Actions
+
+- `tests.yml`: compila la solución .NET y ejecuta las pruebas unitarias, de integración y E2E.
+- `sonar.yml`: analiza la calidad y cobertura del código con SonarQube Cloud.
+- `deploy-pages.yml`: valida y publica el portal estático de `site/` en GitHub Pages.
