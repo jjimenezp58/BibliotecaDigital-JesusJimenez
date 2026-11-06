@@ -1,0 +1,134 @@
+name: SonarQube Cloud - Análisis de calidad
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analizar calidad y cobertura
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_QUALITYGATE_WAIT: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Preparar .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Instalar SonarScanner para .NET
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Iniciar análisis de SonarQube Cloud
+        id: sonar_begin
+        run: >
+          dotnet sonarscanner begin
+          /k:"jjimenezp58_BibliotecaDigital-JesusJimenez"
+          /o:"jjimenezp58"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.token="${SONAR_TOKEN}"
+          /d:sonar.qualitygate.wait="${SONAR_QUALITYGATE_WAIT}"
+          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+          /d:sonar.coverage.exclusions="site/**"
+
+      - name: Restaurar dependencias
+        run: dotnet restore BibliotecaDigitalE2E.sln
+
+      - name: Compilar la solución
+        run: dotnet build BibliotecaDigitalE2E.sln --configuration Release --no-restore
+
+      - name: Ejecutar pruebas unitarias con cobertura
+        run: >
+          dotnet test tests/Biblioteca.UnitTests/Biblioteca.UnitTests.csproj
+          --configuration Release --no-build --no-restore
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory TestResults/Unit
+          --collect:"XPlat Code Coverage"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Ejecutar pruebas de integración con cobertura
+        run: >
+          dotnet test tests/Biblioteca.IntegrationTests/Biblioteca.IntegrationTests.csproj
+          --configuration Release --no-build --no-restore
+          --logger "trx;LogFileName=integration-tests.trx"
+          --results-directory TestResults/Integration
+          --collect:"XPlat Code Coverage"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Arrancar la API
+        run: |
+          ASPNETCORE_URLS="http://127.0.0.1:5080" \
+          nohup dotnet src/Biblioteca.Api/bin/Release/net10.0/Biblioteca.Api.dll \
+            > api.log 2>&1 &
+
+          echo $! > api.pid
+
+      - name: Esperar a que la API esté disponible
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://127.0.0.1:5080/api/health \
+              > /dev/null; then
+              echo "API disponible."
+              exit 0
+            fi
+
+            echo "Esperando a que arranque la API..."
+            sleep 2
+          done
+
+          echo "La API no respondió dentro del tiempo esperado."
+          cat api.log
+          exit 1
+
+      - name: Ejecutar pruebas E2E con cobertura
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5080
+        run: >
+          dotnet test tests/Biblioteca.E2ETests/Biblioteca.E2ETests.csproj
+          --configuration Release --no-build --no-restore
+          --logger "trx;LogFileName=e2e-tests.trx"
+          --results-directory TestResults/E2E
+          --collect:"XPlat Code Coverage"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Mostrar registros de la API si hay errores
+        if: failure()
+        run: cat api.log || true
+
+      - name: Detener la API
+        if: always()
+        run: |
+          if [ -f api.pid ]; then
+            kill "$(cat api.pid)" || true
+          fi
+
+      - name: Finalizar análisis de SonarQube Cloud
+        if: always() && steps.sonar_begin.outcome == 'success'
+        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+      - name: Guardar resultados y cobertura
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: resultados-sonar
+          path: TestResults/
+          if-no-files-found: warn
+          retention-days: 7
