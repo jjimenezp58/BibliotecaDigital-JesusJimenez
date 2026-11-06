@@ -46,6 +46,7 @@ jobs:
           /d:sonar.token="${SONAR_TOKEN}"
           /d:sonar.qualitygate.wait="${SONAR_QUALITYGATE_WAIT}"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+          /d:sonar.coverage.exclusions="site/**"
 
       - name: Restaurar dependencias
         run: dotnet restore BibliotecaDigitalE2E.sln
